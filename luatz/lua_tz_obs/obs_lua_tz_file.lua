@@ -593,10 +593,12 @@ local function set_time_text()
 
     pst = get_pst(os.time() * 1000)
 
+    --[[
     obs.script_log(obs.LOG_INFO, "pst"..pst)
     obs.script_log(obs.LOG_INFO, "u"..tz_untils[tz_idx-1])
     obs.script_log(obs.LOG_INFO, "o"..tz_offsets[tz_idx ])
     obs.script_log(obs.LOG_INFO, "a"..tz_abbrs[tz_idx ])
+    ]]
 
     local format_str = time_text_clean
     local format_utc = string.gsub(time_text_clean, "%%z", "UTC")
@@ -614,7 +616,8 @@ local function set_time_text()
     text = string.gsub(text, "%%NG",negative_local)
     end
     ]]
-    local negative_local =  os.date(format_str, utc_time) --local negative not workif(negative_local==nil)then
+    local negative_local =  os.date(format_str, utc_time) --local negative not work
+    if(negative_local==nil)then
     text = string.gsub(text, "%%N","negative_local not supported:nil")
     else
     text = string.gsub(text, "%%N",negative_local)
