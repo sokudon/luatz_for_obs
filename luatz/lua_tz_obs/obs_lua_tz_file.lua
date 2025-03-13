@@ -10,8 +10,9 @@ local tz_abbrs = {
     "PDT", "PST", "PDT", "PST", "PDT", "PST", "PDT", "PST", "PDT", "PST", "PDT",
     "PST"
 }
-format_string_avoid_crash="%%[EJKLNOPQfikloqsvZ]"  --os.date %z Z works unix,but windows never work()
-osdate_avoid_crash ="%%[EJKLNOPQfikloqsvzZ]" --os.date %z Z works unix,but windows never work()
+
+format_string_avoid_crash = "%%[EJKLNOPQfikloqsvZ]" -- os.date %z Z works unix,but windows never work()
+osdate_avoid_crash = "%%[EJKLNOPQfikloqsvzZ]" -- os.date %z Z works unix,but windows never work()
 
 local tz_untils = {
     1552212000000, 1572771600000, 1583661600000, 1604221200000, 1615716000000,
@@ -34,18 +35,55 @@ local timezone_strings = {
     "Asia/Tokyo", "Europe/London", "Europe/Paris", "Australia/Sydney", "UTC"
 }
 
+-- https://grok.com/chat/83e5b2cd-7bdc-4409-b1bb-ad88e3fa31ca
+function isWindows()
+    -- Windows特有の環境変数 "OS" をチェック
+    local osName = os.getenv("OS")
+    if osName and osName:lower():find("windows") then
+        return true
+    else
+        return false
+    end
+end
+
 -- Default TZIF file path (adjust based on your system)
-local timezone_tzif_path =
-    "C:\\Users\\imasp\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\dateutil\\zoneinfo\\dateutil-zoneinfo.tar\\"
--- "C:/path/to/zoneinfo/" -- Update this path
+timezone_tzif_path = ""
+
+local username = os.getenv("USERNAME")
+
+-- timezoneのtzifバイナリがあるぱす、ぱいそんのdateutil とかcygwinとかもあるが（）
+timezone_tzif_path_suggest_window = {
+    script_path() .. "zoneinfo/", -- script_path()はこのスクリプトの場所
+    -- windows_timzeon_path =  Windows PowerShellを起動します。 Get-ChildItem Env:
+    "C:/Users/" .. username ..
+        "/AppData/Local/Programs/Python/Python312/Lib/site-packages/dateutil/zoneinfo/dateutil-zoneinfo.tar/",
+    "C:/Users/" .. username ..
+        "/AppData//Local/Programs/Python/Python312/Lib/site-packages/pytz/zoneinfo/",
+    "C:/Program Files/LibreOffice/program/python-core-3.10.16/lib/site-packages/pytz/zoneinfo/",
+    "C:/Program Files/LibreOffice/program/python-core-3.10.16/lib/site-packages/dateutil/zoneinfo/dateutil-zoneinfo.tar/",
+    "C:/cygwin64/usr/share/zoneinfo/"
+}
+
+-- Unix-like paths //printenv または envコマンドで環境変数を確認
+timezone_tzif_path_suggest_unix = {
+    script_path() .. "zoneinfo/", -- script_path()はこのスクリプトの場所
+    "/usr/share/zoneinfo/", "/etc/localtime/",
+    "/usr/lib/python312/dist-packages/dateutil/zoneinfo/",
+    "/usr/local/lib/python312/dist-packages/dateutil/zoneinfo/",
+    "/usr/lib/libreoffice/program/python-core-3.10.16/lib/site-packages/pytz/zoneinfo/",
+    "/usr/lib/libreoffice/program/python-core-3.10.16/lib/site-packages/dateutil/zoneinfo/",
+    "/Applications/LibreOffice.app/Contents/Resources/python-core-3.10.16/lib/site-packages/pytz/zoneinfo/",
+    "/Applications/LibreOffice.app/Contents/Resources/python-core-3.10.16/lib/site-packages/dateutil/zoneinfo/dateutil-zoneinfo.tar/"
+}
 
 -- Supported date formats
-local dateformat = {  --Z work TZN,but unix user work  see format_string_avoid_crash
-    "%Y-%m-%d %H:%M:%S %z (%a)", "%m-%d %H:%M", "%H:%M", "%Y-%m-%d(%a)%H:%M:%S %z %Z",
-    "%a,%d %b %Y %H:%M:%S %z",
-     "%Y-%m-%dT%H:%M:%S%z", --iso8601
-    "%a,%d %b %Y %H:%M:%S %Z", 
-}
+local dateformat =
+    { -- Z work TZN,but unix user work  see format_string_avoid_crash
+        "%Y-%m-%d %H:%M:%S %z (%a)", "%m-%d %H:%M", "%H:%M",
+        "%Y-%m-%d(%a)%H:%M:%S %z %Z", "%a,%d %b %Y %H:%M:%S %z",
+        "%Y-%m-%dT%H:%M:%S%z", -- iso8601
+        "%a,%d %b %Y %H:%M:%S %Z"
+    }
 
 -- Define metatable implementations that would normally be in tzinfo.lua
 -- https://github.com/daurnimator/luatz/tree/master/luatz luatzのパーサーを改造
@@ -170,7 +208,10 @@ local function convert_momentjs()
 end
 
 local fifteen_nulls = ("\0"):rep(15)
-local function read_tz(fd)
+local function read_tz(fd, file_seek)
+
+    assert(fd:seek("set", file_seek))
+
     assert(fd:read(4) == "TZif", "Invalid TZ file")
     local version = assert(fd:read(1))
     if version == "\0" or version == "2" or version == "3" then
@@ -294,11 +335,94 @@ local function read_tz(fd)
     end
 end
 
+function android_tzreader(fd, filePath)
+
+    local target = {-1, -1} -- Lua uses 1-based indexing, but we'll keep -1 as per the original logic
+
+    local android_tzseek_text = timezone -- Simulated textbox input (android_tzseek.Text)
+
+    assert(fd:seek("set", 0))
+
+    -- Read the first 24 bytes (header)
+    local buffer = fd:read(12)
+    if not buffer or #buffer < 12 then
+        obs.script_log(obs.LOG_INFO, "File too short or read failed")
+        return target
+    end
+
+    local indexOffset = assert(read_int32be(fd))
+    local dataOffset = assert(read_int32be(fd))
+    local zonetabOffset = assert(read_int32be(fd))
+    obs.script_log(obs.LOG_INFO, "dataOffset: " ..dataOffset)
+    obs.script_log(obs.LOG_INFO, "zonetabOffset: " ..zonetabOffset)
+
+    local indexSize = dataOffset - indexOffset
+    local sectionCount = 0
+    local maxSections = math.floor(indexSize / 52)
+    local tzname = ""
+
+    -- Read 52-byte chunks
+    while true do
+        buffer = fd:read(40)
+        if not buffer or #buffer < 40 then break end
+        if sectionCount >= maxSections then break end
+
+        -- Extract timezone name (first 20 bytes, trim nulls)
+        tzname = string.sub(buffer, 1, 20):gsub("%z", "")
+
+        if tzname == "TZif2" then break end
+
+        -- Extract offset and length
+        local offset = assert(read_int32be(fd))
+        local tzLength = assert(read_int32be(fd))
+        fd:read(4)
+
+        -- Check if this is the target timezone
+        if tzname == android_tzseek_text then
+            target[1] = offset
+            target[2] = tzLength
+            obs.script_log(obs.LOG_INFO, "tzname: " .. tzname)
+            obs.script_log(obs.LOG_INFO, "target_offet: " ..target[1])
+            obs.script_log(obs.LOG_INFO, "size: " ..target[2])
+        end
+
+        sectionCount = sectionCount + 1
+    end
+
+    local Tzif_pos = sectionCount * 52 + 24
+
+    if target[2] > 0 then target[1] = target[1] + Tzif_pos end
+    return target
+end
+
+-- Assuming this is part of a larger function
+function process_tzdata(fd, tzdata)
+
+    -- Extract the header (first 4 bytes)
+    local header = fd:read(4)
+    local file_seek = 0
+
+    if header == "tzda" then
+        local target = android_tzreader(fd, tzdata) -- Call the previously converted function
+        if target[1] == -1 then
+            obs.script_log(obs.LOG_INFO, "android tzdata read failed")
+            return nil -- Exit the function if target[0] == -1
+        end
+
+        file_seek = target[1]
+        obs.script_log(obs.LOG_INFO,
+                       "android tzdata read success pos:" .. file_seek)
+    end
+
+    -- Return updated bs and header if needed (adjust based on your function's purpose)
+    return read_tz(fd, file_seek)
+end
+
 local function read_tzfile(path)
     local fd = assert(io.open(path, "rb"))
-    local tzinfo = read_tz(fd)
+    local tzinfo = process_tzdata(fd, path)
 
-    error(tzinfo)
+    obs.script_log(obs.LOG_INFO, tzinfo)
 
     fd:close()
     return tzinfo
@@ -311,12 +435,18 @@ local function get_timezone_offset(tzinfo, timestamp)
 end
 
 local function find_timezome_zoneinfo_path()
-    -- Common locations for Python dateutil zoneinfo files
-    local possible_paths = {
-        -- Windows paths
-        timezone_tzif_path, -- スクリプト実行場所
-        script_path() .. "/zoneinfo/"
-    }
+    local windows = isWindows()
+    local possible_paths = {}
+
+    if windows then
+        possible_paths = {
+            timezone_tzif_path, unpack(timezone_tzif_path_suggest_window)
+        }
+    else
+        possible_paths = {
+            timezone_tzif_path, unpack(timezone_tzif_path_suggest_unix)
+        }
+    end
 
     for _, path in ipairs(possible_paths) do
         local test_file = path .. "UTC"
@@ -324,6 +454,12 @@ local function find_timezome_zoneinfo_path()
         if f then
             f:close()
             return path
+        end
+        test_file = path .. "tzdata"
+        local f = io.open(test_file, "rb")
+        if f then
+            f:close()
+            return path .. "tzdata"
         end
     end
 
@@ -338,10 +474,10 @@ local function load_timezone(timezone_name)
         return nil
     end
 
-    -- Convert timezone name format (e.g., "America/Los_Angeles" -> "America/Los_Angeles")
-    -- timezone_name = timezone_name:gsub("_", "/")
-
     local tzfile_path = zoneinfo_path .. timezone_name
+    if (zoneinfo_path:match("tzdata$")) then tzfile_path = zoneinfo_path end
+    obs.script_log(obs.LOG_INFO, tzfile_path)
+
     return read_tzfile(tzfile_path)
 end
 
@@ -373,9 +509,8 @@ end
 local function closest(timestamp)
     local len = #tz_untils
     if timestamp < tz_untils[1] then return 1 end
-    if timestamp >= tz_untils[len - 1] then return len  end
+    if timestamp >= tz_untils[len - 1] then return len end
 
-    
     return binary_search_right(tz_untils, timestamp)
 end
 
@@ -490,8 +625,8 @@ function get_time_components(timestamp, offset_seconds)
     local days_left = math.floor((adjusted_time - get_year_epoch(year)) /
                                      seconds_per_day)
 
-     -- 閏年対応
-     if year % 4 == 0 and (year % 100 ~= 0 or year % 400 == 0) then
+    -- 閏年対応
+    if year % 4 == 0 and (year % 100 ~= 0 or year % 400 == 0) then
         days_in_month[2] = 29
     else
         days_in_month[2] = 28
@@ -523,7 +658,10 @@ function strftime(format, timestamp, offset_hours)
     local offset_seconds = offset_hours * 3600
     local components = get_time_components(timestamp, offset_seconds)
     if components == nil then return nil end
-    local months = {"Jan" , "Feb" , "Mar" , "Apr" , "May" , "Jun" , "Jul" , "Aug" , "Sep" , "Oct" , "Nov" , "Dec" }
+    local months = {
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
+        "Nov", "Dec"
+    }
 
     local weekdays = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
     -- フォーマット置換
@@ -578,8 +716,8 @@ function tznow(format_str, utc_time)
 end
 
 function get_timezone_offset(ts) -- サマー有りタイムゾーン時差情報 当時の時間 negativeだとこれも使えない
-    local utcdate = os.date("!*t", ts)  --lutc work
-    local localdate = os.date("*t", ts)   --local negative not work
+    local utcdate = os.date("!*t", ts) -- lutc work
+    local localdate = os.date("*t", ts) -- local negative not work
     localdate.isdst = false -- this is the trick
     return os.difftime(os.time(localdate), os.time(utcdate))
 end
@@ -589,7 +727,8 @@ local function set_time_text()
     local utc_time = os.time()
 
     local text = para_text
-    local time_text_clean = string.gsub(time_text, format_string_avoid_crash, "")
+    local time_text_clean =
+        string.gsub(time_text, format_string_avoid_crash, "")
 
     pst = get_pst(os.time() * 1000)
 
@@ -604,7 +743,7 @@ local function set_time_text()
     local format_utc = string.gsub(time_text_clean, "%%z", "UTC")
     local format_jst = string.gsub(time_text_clean, "%%z", "JST")
     local format_tz = string.gsub(time_text_clean, "%%z", pst)
-    
+
     text = string.gsub(text, "%%TZN", tznow(time_text, utc_time))
 
     --[[
@@ -616,18 +755,19 @@ local function set_time_text()
     text = string.gsub(text, "%%NG",negative_local)
     end
     ]]
-    local negative_local =  os.date(format_str, utc_time) --local negative not work
-    if(negative_local==nil)then
-    text = string.gsub(text, "%%N","negative_local not supported:nil")
+    local negative_local = os.date(format_str, utc_time) -- local negative not work
+    if (negative_local == nil) then
+        text = string.gsub(text, "%%N", "negative_local not supported:nil")
     else
-    text = string.gsub(text, "%%N",negative_local)
+        text = string.gsub(text, "%%N", negative_local)
     end
-    text = string.gsub(text, "%%UTC", os.date("!"..format_utc, utc_time))
-    text = string.gsub(text, "%%JST", os.date("!"..format_jst, utc_time+9*3600))
-    text = string.gsub(text, "%%TZ", os.date("!"..format_tz, utc_time+pst*3600))
+    text = string.gsub(text, "%%UTC", os.date("!" .. format_utc, utc_time))
+    text = string.gsub(text, "%%JST",
+                       os.date("!" .. format_jst, utc_time + 9 * 3600))
+    text = string.gsub(text, "%%TZ",
+                       os.date("!" .. format_tz, utc_time + pst * 3600))
 
-
-    text = string.gsub(text, osdate_avoid_crash, "") -- フリーズ文字 %%[EJKLNOPQfikloqsvZ]
+    text = string.gsub(text, osdate_avoid_crash, "")
     text = os.date(text, utc_time)
 
     local source = obs.obs_get_source_by_name(source_name)
@@ -650,11 +790,16 @@ function script_properties()
     local p = obs.obs_properties_add_list(props, "source", "Text Source",
                                           obs.OBS_COMBO_TYPE_EDITABLE,
                                           obs.OBS_COMBO_FORMAT_STRING)
+    obs.obs_property_list_add_string(p, "[No text source]", "[No text source]")
+
     local sources = obs.obs_enum_sources()
-    if sources then
+
+    if sources ~= nil then
         for _, source in ipairs(sources) do
-            if obs.obs_source_get_id(source) == "text_gdiplus" then
-                local name = obs.obs_source_get_name(source)
+            name = obs.obs_source_get_name(source)
+            source_id = obs.obs_source_get_unversioned_id(source)
+            if source_id == "text_gdiplus" or source_id == "text_ft2_source" then
+                name = obs.obs_source_get_name(source)
                 obs.obs_property_list_add_string(p, name, name)
             end
         end
@@ -677,6 +822,29 @@ function script_properties()
         obs.obs_property_list_add_string(fmt, df, df)
     end
 
+    local tzpath_prop = obslua.obs_properties_add_list(props, "tzpath",
+                                                       "tzpath",
+                                                       obslua.OBS_COMBO_TYPE_EDITABLE,
+                                                       obslua.OBS_COMBO_FORMAT_STRING)
+    if (isWindows()) then
+        for i = 1, #timezone_tzif_path_suggest_window do
+            obs.obs_property_list_add_string(tzpath_prop,
+                                             timezone_tzif_path_suggest_window[tonumber(
+                                                 i)],
+                                             timezone_tzif_path_suggest_window[tonumber(
+                                                 i)])
+        end
+    else
+
+        for i = 1, #timezone_tzif_path_suggest_unix do
+            obs.obs_property_list_add_string(tzpath_prop,
+                                             timezone_tzif_path_suggest_unix[tonumber(
+                                                 i)],
+                                             timezone_tzif_path_suggest_unix[tonumber(
+                                                 i)])
+        end
+    end
+
     return props
 end
 
@@ -694,6 +862,7 @@ function script_update(settings)
     timezone = obs.obs_data_get_string(settings, "timezone")
     para_text = obs.obs_data_get_string(settings, "para_text")
     time_text = obs.obs_data_get_string(settings, "time_text")
+    timezone_tzif_path = obs.obs_data_get_string(settings, "tzpath")
 
     load_timezone(timezone)
     set_time_text()
@@ -704,8 +873,10 @@ end
 function script_defaults(settings)
     obs.obs_data_set_default_string(settings, "time_text",
                                     "%Y-%m-%d %H:%M:%S %z (%a)")
-    obs.obs_data_set_default_string(settings, "para_text","Current Time:\nTZN:TZN\n//os.date windows doesnot work negative timestamp()\nos.time:%N\nUTC:%UTC\nJST:%JST\nTZ:%TZ")
+    obs.obs_data_set_default_string(settings, "para_text",
+                                    "Current Time:\nTZN:%TZN\n//os.date windows doesnot work negative timestamp()\nos.time:%N\nUTC:%UTC\nJST:%JST\nTZ:%TZ")
     obs.obs_data_set_default_string(settings, "timezone", "America/Los_Angeles")
+    obs.obs_data_set_default_string(settings, "tzpath", timezone_tzif_path)
 end
 
 -- Load the script

@@ -1,0 +1,4 @@
+obs_lua_tz_file.lua
+
+zoneinfo/tzdata   となるように配置でおいてください（）
+あとはlibraofficeをいれると　pythonのpytzが自動的に入るのでそれもおｋ
