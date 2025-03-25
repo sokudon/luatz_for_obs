@@ -25,11 +25,6 @@ local tz_offsets = {
     480, 420, 480, 420, 480, 420, 480, 420, 480, 420, 480, 420, 480, 420, 480,
     420, 480, 420, 480, 420, 480, 420, 480
 }
-tz_posix_string = nil -- "PST8PDT,M3.2.0,M11.1.0"
-parsedTZ = nil
-posix_offset = nil
-constant_posix = false
-posix_vs_fallback = false
 tz_len = tonumber(#tz_offsets) - 1
 local tz_idx = 1
 local tz_st = ""
@@ -37,8 +32,7 @@ local tz_st = ""
 -- List of available time zones (abbreviated for brevity; expand as needed)
 local timezone_strings = {
     "Africa/Abidjan", "America/Los_Angeles", "America/New_York", "Asia/Seoul",
-    "Asia/Tokyo", "Europe/London", "Europe/Paris", "Australia/Sydney",
-    "Australia/LHI", "UTC"
+    "Asia/Tokyo", "Europe/London", "Europe/Paris", "Australia/Sydney", "UTC"
 }
 
 -- https://grok.com/chat/83e5b2cd-7bdc-4409-b1bb-ad88e3fa31ca
@@ -67,15 +61,7 @@ timezone_tzif_path_suggest_window = {
         "/AppData//Local/Programs/Python/Python312/Lib/site-packages/pytz/zoneinfo/",
     "C:/Program Files/LibreOffice/program/python-core-3.10.16/lib/site-packages/pytz/zoneinfo/",
     "C:/Program Files/LibreOffice/program/python-core-3.10.16/lib/site-packages/dateutil/zoneinfo/dateutil-zoneinfo.tar/",
-    "C:/cygwin64/usr/share/zoneinfo/",
-    "C:/Users/" .. username .. "/AppData/Local/Lxss/rootfs/usr/share/zoneinfo/",
-    -- "C:/Users/" .. username .. "/AppData/Local/Packages/Ubuntu/LocalState/ext4.vhdx, 仮想イメーじなので未対応（
-    -- C:/Users/<YourUsername>/NoxVM/<InstanceName>/NOX.vmdk C:/ProgramData/BlueStacks/Engine/UserData/Data.vdi androidエミュレーターも仮想（）　まあadbde()
-    "--those are posix timezone,regacy method--",
-    "C:/msys64/usr/share/zoneinfo/", "C:/msys64/usr/share/zoneinfo/posix/",
-    "C:/Users/" .. username ..
-        "/AppData/Local/Programs/Python/Python312/Lib/site-packages/tzdata/",
-    "C:/Program Files/LibreOffice/program/python-core-3.10.16/lib/site-packages/tzdata/"
+    "C:/cygwin64/usr/share/zoneinfo/"
 }
 
 -- Unix-like paths //printenv または envコマンドで環境変数を確認
@@ -123,77 +109,6 @@ local function read_int32be(fd)
     -- print(string.format("%d", unsigned)) -- デバッグ追加
     return unsigned
 end
-
-function read_long_bytesToDouble52BitBigEndian(fd)
-    local bit = require("bit")
-    local data, err = fd:read(8)
-    if not data then return nil, err end
-    -- バイトを取得
-    local b1, b2, b3, b4, b5, b6, b7, b8 = data:byte(1, 8)
-
-    -- 符号判定
-    local value
-    if b1 >= 0x80 then
-        -- 負の値の場合、各バイトを8ビットでNOT（ビット反転）
-        local n1 = bit.band(bit.bnot(b1), 0xFF)
-        local n2 = bit.band(bit.bnot(b2), 0xFF)
-        local n3 = bit.band(bit.bnot(b3), 0xFF)
-        local n4 = bit.band(bit.bnot(b4), 0xFF)
-        local n5 = bit.band(bit.bnot(b5), 0xFF)
-        local n6 = bit.band(bit.bnot(b6), 0xFF)
-        local n7 = bit.band(bit.bnot(b7), 0xFF)
-        local n8 = bit.band(bit.bnot(b8), 0xFF)
-
-        -- 32ビットずつ分割
-        local high = bit.bor(bit.lshift(n1, 24), bit.lshift(n2, 16),
-                             bit.lshift(n3, 8), n4)
-        local low = bit.bor(bit.lshift(n5, 24), bit.lshift(n6, 16),
-                            bit.lshift(n7, 8), n8)
-
-        -- 64ビット値を構築し、最後に+1
-        value = high * 2 ^ 32 + low + 1
-        if (low < 0) then value = value + 2 ^ 32 end
-        value = value * -1
-
-    else
-        -- 正の値の場合、そのまま処理
-        local high = bit.bor(bit.lshift(b1, 24), bit.lshift(b2, 16),
-                             bit.lshift(b3, 8), b4)
-        local low = bit.bor(bit.lshift(b5, 24), bit.lshift(b6, 16),
-                            bit.lshift(b7, 8), b8)
-        value = high * 2 ^ 32 + low
-        if (low < 0) then value = value + 2 ^ 32 end
-    end
-
-    -- 52ビット精度に制限
-    local max52Bit = 2 ^ 53 - 1 -- 9,007,199,254,740,991
-    local min52Bit = -2 ^ 53 -- -9,007,199,254,740,992
-    if value > max52Bit then
-        -- value = max52Bit
-        obs.script_log(obs.LOG_INFO, value ..
-                           "がmaxこえてます 値が9,007,199,254,740,991,53bit以上の場合 64bit浮動小数点精度は保証されません")
-    elseif value < min52Bit then
-        -- value = min52Bit
-        obs.script_log(obs.LOG_INFO, value ..
-                           "minをこえてます 値が-9,007,199,254,740,992,53bit以下の場合 64bit浮動小数点精度は保証されません")
-    end
-
-    return value
-end
-
---[[
-local bit = require("bit") -- bitライブラリが必要 完全な64bit対応だが、しかしosdateも使えなくなる諸刃の剣（） osdata (doubleでし)
-local function read_int64be(fd)
-    local data, err = fd:read(8)
-    if not data then return nil, err end
-    local bytes = {data:byte(1, 8)}
-    local int64 = 0
-    for i = 0, 7 do
-        int64 = bit.bor(bit.lshift(int64, 8), bytes[i + 1])
-    end
-    return int64
-end
-]]
 
 -- 64bitエンディアン変換はluaが内部に倍精度浮動小数を用いいているので
 -- 負数変換時問題が発生する（）　2^53上まで グロックたんの回答
@@ -272,7 +187,7 @@ local function convert_momentjs()
     else
         -- 最初のエントリをUTCに設定
         tz_untils[1] = -2 ^ 31 -- 最小値（Moment.jsの範囲開始）
-        tz_abbrs[1] = "UTC" -- 本当はLMTだが、緯度情報がいるのでとりあえずUTCにしておく
+        tz_abbrs[1] = "UTC"
         tz_offsets[1] = 0
 
         -- 既存データをスライド
@@ -291,18 +206,9 @@ local function convert_momentjs()
 
     return
 end
--- 先頭と末尾の改行および空白をトリムする関数
-local function trim_ends(str)
-    if not str then return "" end
-    -- 先頭の改行と空白を削除
-    str = str:gsub("^[\n%s]+", "")
-    -- 末尾の改行と空白を削除
-    str = str:gsub("[\n%s]+$", "")
-    return str
-end
 
 local fifteen_nulls = ("\0"):rep(15)
-local function read_tz(fd, file_seek, file_size)
+local function read_tz(fd, file_seek)
 
     assert(fd:seek("set", file_seek))
 
@@ -312,7 +218,7 @@ local function read_tz(fd, file_seek, file_size)
         local MIN_TIME = -2 ^ 32 + 1
 
         assert(fd:read(15) == fifteen_nulls, "Expected 15 nulls")
-        tz_posix_string = nil
+
         local tzh_ttisgmtcnt = assert(read_int32be(fd))
         local tzh_ttisstdcnt = assert(read_int32be(fd))
         local tzh_leapcnt = assert(read_int32be(fd))
@@ -320,7 +226,7 @@ local function read_tz(fd, file_seek, file_size)
         local tzh_typecnt = assert(read_int32be(fd))
         local tzh_charcnt = assert(read_int32be(fd))
 
-        --[[
+        --
         obs.script_log(obs.LOG_INFO,
                        string.format("tzh_timecnt: %d", tzh_timecnt))
         obs.script_log(obs.LOG_INFO,
@@ -329,7 +235,6 @@ local function read_tz(fd, file_seek, file_size)
                        string.format("tzh_charcnt: %s", tzh_charcnt))
         -- ]]
 
-        posixTZ = nil
         timezone_transition = {}
         timezone_offset = {}
         timezone_abbr = {}
@@ -383,105 +288,9 @@ local function read_tz(fd, file_seek, file_size)
 
         obs.script_log(obs.LOG_INFO, "TZif 32 passed")
 
-        assert(fd:read(4) == "TZif", "Invalid TZ file")
-        local version = assert(fd:read(1))
-        if version == "2" or version == "3" then
-            local MIN_TIME = -2 ^ 53 + 1
-
-            assert(fd:read(15) == fifteen_nulls, "Expected 15 nulls")
-
-            local tzh_ttisgmtcnt = assert(read_int32be(fd))
-            local tzh_ttisstdcnt = assert(read_int32be(fd))
-            local tzh_leapcnt = assert(read_int32be(fd))
-            local tzh_timecnt = assert(read_int32be(fd))
-            local tzh_typecnt = assert(read_int32be(fd))
-            local tzh_charcnt = assert(read_int32be(fd))
-
-            --
-            obs.script_log(obs.LOG_INFO,
-                           string.format("tzh_timecnt: %d", tzh_timecnt))
-            obs.script_log(obs.LOG_INFO,
-                           string.format("tzh_typecnt : %d", tzh_typecnt))
-            obs.script_log(obs.LOG_INFO,
-                           string.format("tzh_charcnt: %s", tzh_charcnt))
-            -- ]]
-
-            timezone_transition = {}
-            timezone_offset = {}
-            timezone_abbr = {}
-
-            -- トランジション時刻
-            for i = 1, tzh_timecnt do
-                timezone_transition[i] = assert(
-                                             read_long_bytesToDouble52BitBigEndian(
-                                                 fd))
-            end
-            local transition_time_ind = {
-                assert(fd:read(tzh_timecnt)):byte(1, -1)
-            }
-
-            -- タイムゾーン情報
-            local ttinfos = {}
-            for i = 1, tzh_typecnt do
-                ttinfos[i] = {
-                    gmtoff = assert(read_int32be(fd)),
-                    isdst = assert(fd:read(1)) ~= "\0",
-                    abbrind = assert(fd:read(1)):byte()
-                }
-            end
-
-            local abbreviations = assert(fd:read(tzh_charcnt))
-
-            -- オフセットと略称を格納
-            for i = 1, tzh_timecnt do
-                local ttinfo = ttinfos[transition_time_ind[i] + 1]
-                timezone_offset[i] = ttinfo.gmtoff
-                timezone_abbr[i] = abbreviations:sub(ttinfo.abbrind + 1,
-                                                     (abbreviations:find("\0",
-                                                                         ttinfo.abbrind +
-                                                                             1) or
-                                                         #abbreviations + 1) - 1)
-            end
-
-            if (tzh_timecnt == 0) then
-                timezone_transition[1] = nil
-                timezone_offset[1] = ttinfos[1].gmtoff
-                timezone_abbr[1] = abbreviations
-            end
-
-            -- リープ秒
-            local leap_seconds = {}
-            for i = 1, tzh_leapcnt do
-                leap_seconds[i] = {
-                    offset = assert(read_int32be(fd)),
-                    n = assert(read_int32be(fd))
-                }
-            end
-
-            local isstd = assert(read_flags(fd, tzh_ttisstdcnt))
-            local isgmt = assert(read_flags(fd, tzh_ttisgmtcnt))
-
-            local current_pos = fd:seek("cur")
-            local end_pos = file_size
-
-            --[[
-            obs.script_log(obs.LOG_INFO,
-            "TZif posix_tz_string:" .. current_pos)
-            obs.script_log(obs.LOG_INFO,
-                           "TZif posix_tz_string:" .. end_pos)
-                           ]]
-            if end_pos > current_pos then
-                fd:seek("set", current_pos)
-                posix_tz_string = trim_ends(fd:read(end_pos - current_pos)) or
-                                      nil
-
-                obs.script_log(obs.LOG_INFO,
-                               "TZif posix_tz_string:" .. posix_tz_string)
-            else
-                posix_tz_string = nil
-            end
-            obs.script_log(obs.LOG_INFO, "TZif 64 passed")
-        end
+        -- 64bitDB 使えないので省略、まあ正のあたりだけならつかえる
+        -- if version == "2" or version == "3" then
+        -- end
 
         -- ttinfosに略称とフラグを追加
         for i = 1, tzh_typecnt do
@@ -544,8 +353,8 @@ function android_tzreader(fd, filePath)
     local indexOffset = assert(read_int32be(fd))
     local dataOffset = assert(read_int32be(fd))
     local zonetabOffset = assert(read_int32be(fd))
-    obs.script_log(obs.LOG_INFO, "dataOffset: " .. dataOffset)
-    obs.script_log(obs.LOG_INFO, "zonetabOffset: " .. zonetabOffset)
+    obs.script_log(obs.LOG_INFO, "dataOffset: " ..dataOffset)
+    obs.script_log(obs.LOG_INFO, "zonetabOffset: " ..zonetabOffset)
 
     local indexSize = dataOffset - indexOffset
     local sectionCount = 0
@@ -573,8 +382,8 @@ function android_tzreader(fd, filePath)
             target[1] = offset
             target[2] = tzLength
             obs.script_log(obs.LOG_INFO, "tzname: " .. tzname)
-            obs.script_log(obs.LOG_INFO, "target_offet: " .. target[1])
-            obs.script_log(obs.LOG_INFO, "size: " .. target[2])
+            obs.script_log(obs.LOG_INFO, "target_offet: " ..target[1])
+            obs.script_log(obs.LOG_INFO, "size: " ..target[2])
         end
 
         sectionCount = sectionCount + 1
@@ -592,7 +401,6 @@ function process_tzdata(fd, tzdata)
     -- Extract the header (first 4 bytes)
     local header = fd:read(4)
     local file_seek = 0
-    local file_size = fd:seek("end")
 
     if header == "tzda" then
         local target = android_tzreader(fd, tzdata) -- Call the previously converted function
@@ -602,14 +410,12 @@ function process_tzdata(fd, tzdata)
         end
 
         file_seek = target[1]
-        file_size = target[2] + target[1]
         obs.script_log(obs.LOG_INFO,
-                       "android tzdata read success pos:" .. file_seek,
-                       file_size)
+                       "android tzdata read success pos:" .. file_seek)
     end
 
     -- Return updated bs and header if needed (adjust based on your function's purpose)
-    return read_tz(fd, file_seek, file_size)
+    return read_tz(fd, file_seek)
 end
 
 local function read_tzfile(path)
@@ -675,240 +481,6 @@ local function load_timezone(timezone_name)
     return read_tzfile(tzfile_path)
 end
 
-local function parseOffset(offset)
-    if (offset == nil) then return nil end
-
-    -- obs.script_log(obs.LOG_DEBUG,"parseOffset: Input offset: " .. tostring(offset))
-    local sign, hours = offset:match("^([%-%+]?)(%d+)")
-    local minutes = offset:match(":(%d+)$")
-    hours = tonumber(hours)
-    local totalMinutes = hours * 60
-    if minutes then totalMinutes = totalMinutes + tonumber(minutes) end
-    if sign ~= "-" then totalMinutes = totalMinutes * (-1) end
-    -- obs.script_log(obs.LOG_DEBUG, "parseOffset: Calculated totalMinutes: " ..  tostring(totalMinutes * -1))
-    return totalMinutes * -1
-end
-
-local function parseTransition(transition)
-    -- obs.script_log(obs.LOG_DEBUG, "parseTransition: Input transition: " .. tostring(transition))
-    if string.sub(transition, 1, 1) == "M" then
-        local parts = {}
-        for part in string.gmatch(transition:sub(2), "[^/]+") do
-            table.insert(parts, part)
-        end
-
-        local month, week, day = string.match(parts[1], "(%d+)%.(%d+)%.(%d+)")
-        -- obs.script_log(obs.LOG_DEBUG,    "parseTransition: month: " .. tostring(month) ..", week: " .. tostring(week) .. ", day: " ..tostring(day))
-
-        local time = {hour = 2, minute = 0, second = 0}
-
-        if parts[2] then
-            local hour, minute, second =
-                string.match(parts[2], "(%d+):?(%d+)?:?(%d+)?")
-            time.hour = tonumber(hour) or 2
-            time.minute = tonumber(minute) or 0
-            time.second = tonumber(second) or 0
-            -- obs.script_log(obs.LOG_DEBUG,        "parseTransition: hour: " .. tostring(time.hour) ..    ", minute: " .. tostring(time.minute) ..    ", second: " .. tostring(time.second))
-        end
-
-        return {
-            month = tonumber(month),
-            week = tonumber(week),
-            day = tonumber(day),
-            hour = time.hour,
-            minute = time.minute,
-            second = time.second
-        }
-    end
-    -- obs.script_log(obs.LOG_WARNING,"parseTransition: Unsupported transition format: " .. tostring(transition))
-    return nil
-end
-
-function parsePosixTZ(tz)
-    -- obs.script_log(obs.LOG_DEBUG, "parsePosixTZ: Input TZ string: " .. tostring(tz))
-    local result = {
-        stdAbbr = nil,
-        stdOffset = 0,
-        dst = false,
-        dstAbbr = nil,
-        dstOffset = nil,
-        dstStart = nil,
-        dstEnd = nil
-    }
-
-    local parts = {}
-    for part in string.gmatch(tz, "[^,]+") do
-        table.insert(parts, part)
-        -- obs.script_log(obs.LOG_DEBUG,    "parsePosixTZ: Found part: " .. tostring(part))
-    end
-
-    local localTZ = parts[1]
-    -- obs.script_log(obs.LOG_DEBUG, "parsePosixTZ: localTZ: " .. tostring(localTZ))
-
-    local LOCAL_TZ_RE = "^([A-Za-Z]+)([%+%-]?%d+)$" -- 標準的な POSIX タイムゾーン形式
-    local LOCAL_TZ_REE = "^([A-Za-Z]+)([%+%-]?%d+)([A-Za-Z]+)$" -- 標準的な POSIX タイムゾーン形式
-    local LOCAL_TZ_REEE = "^([A-Za-Z]+)([%+%-]?%d+)([A-Za-Z]+)([%+%-]?%d+)$" -- 標準的な POSIX タイムゾーン形式
-    local LOCAL_TZ_AB = "^(.[+-]?%d+:%d+.)([+-]?%d+:%d+)(.[+-]?%d+.)([+-]?%d+)$"
-    local LOCAL_TZ_ABB ="^(<[+-]?%d+:%d+>)([+-]?%d+:%d+)(%<[+-]?%d+:%d+>)([+-]?%d+:%d+)$"
-
-    local match
-    local success_match = nil
-    match = localTZ:match(LOCAL_TZ_RE)
-    if match then
-        success_match = LOCAL_TZ_RE
-        -- obs.script_log(obs.LOG_DEBUG, "parsePosixTZ: Matched LOCAL_TZ_RE")
-    elseif localTZ:match(LOCAL_TZ_REE) then
-        success_match = LOCAL_TZ_REE
-        -- obs.script_log(obs.LOG_DEBUG, "parsePosixTZ: Matched LOCAL_TZ_REE")
-    elseif localTZ:match(LOCAL_TZ_REEE) then
-        success_match = LOCAL_TZ_REEE
-        -- obs.script_log(obs.LOG_DEBUG, "parsePosixTZ: Matched LOCAL_TZ_REEE")
-    elseif localTZ:match(LOCAL_TZ_AB) then
-        success_match = LOCAL_TZ_AB
-        -- obs.script_log(obs.LOG_DEBUG, "parsePosixTZ: Matched LOCAL_TZ_AB")
-    elseif localTZ:match(LOCAL_TZ_ABB) then
-        success_match = LOCAL_TZ_ABB
-        -- obs.script_log(obs.LOG_DEBUG, "parsePosixTZ: Matched LOCAL_TZ_ABB")
-    end
-
-    if (success_match) then
-        local stdAbbr, stdOffset, dstAbbr, dstOffset = localTZ:match(
-                                                           success_match)
-        result.stdAbbr = stdAbbr
-        result.stdOffset = parseOffset(stdOffset) or 0
-        result.dst = dstAbbr ~= nil
-        result.dstAbbr = dstAbbr
-        result.dstOffset = parseOffset(dstOffset) or (result.stdOffset - 60)
-    else
-        -- obs.script_log(obs.LOG_WARNING, "parsePosixTZ: Could not parse localTZ: " ..  tostring(localTZ))
-        return nil
-    end
-
-    -- obs.script_log(obs.LOG_DEBUG,"parsePosixTZ: stdAbbr: " .. tostring(result.stdAbbr))
-    -- obs.script_log(obs.LOG_DEBUG,"parsePosixTZ: stdOffset: " .. tostring(result.stdOffset))
-    -- if result.dst then
-    -- obs.script_log(obs.LOG_DEBUG,    "parsePosixTZ: dstAbbr: " .. tostring(result.dstAbbr))
-    -- obs.script_log(obs.LOG_DEBUG, "parsePosixTZ: dstOffset: " ..tostring(result.dstOffset))
-    -- end
-
-    if #parts >= 2 then result.dstStart = parseTransition(parts[2]) end
-    if #parts >= 3 then result.dstEnd = parseTransition(parts[3]) end
-
-    return result
-end
-
-function days(y, m, d)
-    -- 月ごとの累積日数テーブル
-    local t = {306, 337, 0, 31, 61, 92, 122, 153, 184, 214, 245, 275}
-
-    m = tonumber(m)
-    -- 1,2月の場合は前年として計算
-    if m < 3 then y = y - 1 end
-
-    local tm = 365 * y + math.floor(y / 4) - math.floor(y / 100) +
-                   math.floor(y / 400) + t[m] + d
-
-    return tm
-end
-
-function preset_fairfield_dateutc(y, m, d)
-    return (days(y, m, d) - days(1970, 1, 1)) * 86400
-end
-
-function getOffsetForLocalDateWithPosixTZ(localDate, posixTZ)
-    parsedTZ = parsePosixTZ(posixTZ)
-    if not parsedTZ then return nil end
-
-    local year = tonumber(os.date("!%Y", localDate))
-    local month = tonumber(os.date("!%m", localDate))
-    local day = tonumber(os.date("!%d", localDate))
-    local hour = tonumber(os.date("!%H", localDate))
-    local min = tonumber(os.date("!%M", localDate))
-    local sec = tonumber(os.date("!%S", localDate))
-
-    local dt = preset_fairfield_dateutc(year, month, day) + hour * 3600 + min *
-                   60 + sec
-
-    if parsedTZ.dst then
-        local dstStart = transitionToDate(year, parsedTZ.dstStart,
-                                          parsedTZ.stdOffset)
-        local dstEnd = transitionToDate(year, parsedTZ.dstEnd,
-                                        parsedTZ.dstOffset)
-
-        if dstStart > dstEnd then
-            if dt >= dstStart or dt < dstEnd then
-                return parsedTZ.dstOffset
-            end
-        else
-            if dt >= dstStart and dt < dstEnd then
-                return parsedTZ.dstOffset
-            end
-        end
-    end
-
-    return parsedTZ.stdOffset
-end
-
-function transitionToDate(year, transition, offset)
-    local jsMonth = transition.month - 1
-
-    local dt = {
-        year = year,
-        month = jsMonth,
-        day = 1,
-        hour = 0,
-        min = 0,
-        sec = 0
-    }
-
-    -- 指定された曜日に移動
-    local weekday = (tonumber(os.date("!%w", preset_fairfield_dateutc(year,
-                                                                      jsMonth +
-                                                                          1, 1)))) -- os.date("%w") is 0-indexed (Sunday=0)
-
-    local day_diff = (transition.day - weekday) % 7
-    if day_diff < 0 then day_diff = day_diff + 7 end
-    dt.day = dt.day + day_diff
-
-    -- 月が異なる場合は1週間進める
-    if tonumber(os.date("!%m",
-                        preset_fairfield_dateutc(dt.year, dt.month + 1, dt.day))) ~=
-        jsMonth + 1 then dt.day = dt.day + 7 end
-
-    -- 指定された週数分進める/戻す
-    if transition.week > 1 then
-        dt.day = dt.day + (transition.week - 1) * 7
-
-        -- 月が変わってしまったら1週間戻す
-        if tonumber(os.date("!%m", preset_fairfield_dateutc(dt.year,
-                                                            dt.month + 1, dt.day))) ~=
-            jsMonth + 1 then dt.day = dt.day - 7 end
-    end
-
-    local time_sec = preset_fairfield_dateutc(dt.year, dt.month + 1, dt.day) +
-                         transition.hour * 3600 + transition.minute * 60 +
-                         transition.second + offset * 60
-
-    -- obs.script_log(obs.LOG_DEBUG,"data:" .. time_sec ..os.date(" %Y-%m-%d %H:%M:%S ", time_sec) ..os.date("!%Y-%m-%d %H:%M:%S ", time_sec))
-    return time_sec
-end
-
-function formatLocalDateWithOffset(localDate, posixTZ)
-    local offset = getOffsetForLocalDateWithPosixTZ(localDate, posixTZ)
-    if not offset then return nil end
-
-    local dt = os.date("*t", localDate) -- local time
-
-    local offset_hours = math.floor(math.abs(offset) / 60)
-    local offset_minutes = math.abs(offset) % 60
-    local offset_string = string.format("%s%02d:%02d",
-                                        offset >= 0 and "+" or "-",
-                                        offset_hours, offset_minutes)
-
-    return string.format("%04d-%02d-%02dT%02d:%02d:%02d%s", dt.year, dt.month,
-                         dt.day, dt.hour, dt.min, dt.sec, offset_string)
-end
-
 -- Cache for loaded timezones
 local timezone_cache = {}
 
@@ -937,7 +509,7 @@ end
 local function closest(timestamp)
     local len = #tz_untils
     if timestamp < tz_untils[1] then return 1 end
-    if timestamp > tz_untils[len - 1] then return math.huge end
+    if timestamp >= tz_untils[len - 1] then return len end
 
     return binary_search_right(tz_untils, timestamp)
 end
@@ -955,21 +527,9 @@ function get_pst(timestamp)
         return tz_offsets[1] / (-60)
     end
     if (tz_idx > #tz_untils - 1) then
-        if posix_tz_string and posix_tz_string ~= "" then
-            posix_offset = getOffsetForLocalDateWithPosixTZ(timestamp / 1000,
-                                                            posix_tz_string)
-                                                            
-        posix_vs_fallback = true
-
-            -- obs.script_log(obs.LOG_INFO,  "posix_tz_string mode: tz_idx=" .. tz_idx .. " posix_tz_string='" .. tostring(posix_tz_string) .. "'")
-            -- obs.script_log(obs.LOG_INFO, "posix_offset=" .. posix_offset)
-            return posix_offset / -60
-        end
-        
-        posix_vs_fallback = false
         tz_idx = #tz_untils - 1
         tz_idx = tz_idx + 1
-        --obs.script_log(obs.LOG_INFO, "Fallback offset=" .. (tz_offsets[tz_idx] / -60))
+
         return tz_offsets[tz_idx] / (-60)
     end
 
@@ -1113,15 +673,31 @@ function strftime(format, timestamp, offset_hours)
     result = result:gsub("%%H", string.format("%02d", components.hour))
     result = result:gsub("%%M", string.format("%02d", components.minute))
     result = result:gsub("%%S", string.format("%02d", components.second))
-    if (tz_idx == math.huge) then
-        result = result:gsub("%%Z", "not support posix")
-    else
-        result = result:gsub("%%Z", tz_abbrs[tz_idx])
-    end
+    result = result:gsub("%%Z", tz_abbrs[tz_idx])
     result = result:gsub("%%z", string.format("%+02d:%02d", offset_hours, 0))
     result = result:gsub("%%a", weekdays[components.wday])
 
     return result
+end
+
+-- https://teratail.com/questions/292340でみつけたアルゴの移植 fairfieldのプリセットでの計算
+-- https://ja.wikipedia.org/wiki/%E3%83%84%E3%82%A7%E3%83%A9%E3%83%BC%E3%81%AE%E5%85%AC%E5%BC%8F
+function days(y, m, d)
+    -- 月ごとの累積日数テーブル
+    local t = {306, 337, 0, 31, 61, 92, 122, 153, 184, 214, 245, 275}
+
+    m = tonumber(m)
+    -- 1,2月の場合は前年として計算
+    if (m < 3) then y = y - 1 end
+
+    local tm = 365 * y + math.floor(y / 4) - math.floor(y / 100) +
+                   math.floor(y / 400) + t[m] + d
+
+    return tm
+end
+
+function preset_fairfield_dateutc(y, m, d)
+    return (days(y, m, d) - days(1970, 1, 1)) * 86400
 end
 
 function tznow(format_str, utc_time)
@@ -1156,13 +732,12 @@ local function set_time_text()
 
     pst = get_pst(os.time() * 1000)
 
-    --[[]
-    obs.script_log(obs.LOG_INFO, "pst" .. pst)
-    obs.script_log(obs.LOG_INFO, "u" .. tz_idx)
+    --[[
+    obs.script_log(obs.LOG_INFO, "pst"..pst)
     obs.script_log(obs.LOG_INFO, "u"..tz_untils[tz_idx-1])
     obs.script_log(obs.LOG_INFO, "o"..tz_offsets[tz_idx ])
     obs.script_log(obs.LOG_INFO, "a"..tz_abbrs[tz_idx ])
-    --]]
+    ]]
 
     local format_str = time_text_clean
     local format_utc = string.gsub(time_text_clean, "%%z", "UTC")
