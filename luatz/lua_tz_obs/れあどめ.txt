@@ -1,0 +1,77 @@
+以下は、リポジトリ「sokudon/luatz_for_obs」の概要、OBSプラグインのインストール方法、および使い方のドキュメントです。
+
+リポジトリ概要
+「luatz_for_obs」は、Luaで書かれた時間、日付、タイムゾーンライブラリで、OBS Studioのプラグインとして使用されます。このプラグインは、指定したタイムゾーンの現在時刻を表示するテキストソースを作成します。
+
+インストール方法
+リポジトリをクローンします:
+
+sh
+git clone https://github.com/sokudon/luatz_for_obs.git
+luatz_for_obsディレクトリをOBSのスクリプトフォルダにコピーします。例えば、Windowsでは以下のパスにコピーします:
+
+sh
+C:\Program Files\obs-studio\data\obs-plugins\frontend-tools\scripts
+OBS Studioを起動し、メニューバーから「ツール」 > 「スクリプト」を選択します。
+
+「スクリプト」ウィンドウで「+」ボタンをクリックし、コピーしたluatz_for_obsスクリプトを選択して追加します。
+
+使い方
+OBS Studioの「スクリプト」ウィンドウで、追加したluatz_for_obsを選択します。
+
+スクリプトのプロパティで以下の設定を行います:
+
+Text Source: 時刻を表示するテキストソースを選択します。
+Time Zone: 表示するタイムゾーンを選択します（例: "America/Los_Angeles"）。
+Text Format: 表示するテキストのフォーマットを指定します（例: "%Y-%m-%d %H:%M:%S %z (%a)"）。
+tzpath: タイムゾーン情報のファイルパスを指定します（必要に応じて）。
+設定が完了したら、「OK」をクリックして設定を保存し、スクリプトを有効化します。
+
+OBSのシーンに選択したテキストソースを追加します。指定したタイムゾーンの現在時刻が表示されるはずです。
+
+サンプル設定
+以下はサンプルの設定例です:
+
+Text Source: "Current Time"
+Time Zone: "America/Los_Angeles"
+Text Format: "%Y-%m-%d %H:%M:%S %z (%a)"
+tzpath: "C:/Users/username/AppData/Local/Programs/Python/Python312/Lib/site-packages/dateutil/zoneinfo/dateutil-zoneinfo.tar/"
+このプラグインを使用することで、OBS Studioで簡単に異なるタイムゾーンの現在時刻を表示することができます
+
+--参照パスでふぉると　好きに書き換えてください　（）　
+付属の\zoneinfo\tzdata　はアンドロイドtzdataです
+ "--those are posix timezone,regacy method--",
+ は2007年ごろまでしかPSTPDTは入ってないのでposixルールが適用されます
+
+
+timezone_tzif_path_suggest_window = {
+    script_path() .. "zoneinfo/", -- script_path()はこのスクリプトの場所
+    -- windows_timzeon_path =  Windows PowerShellを起動します。 Get-ChildItem Env:
+    "C:/Users/" .. username ..
+        "/AppData/Local/Programs/Python/Python312/Lib/site-packages/dateutil/zoneinfo/dateutil-zoneinfo.tar/",
+    "C:/Users/" .. username ..
+        "/AppData//Local/Programs/Python/Python312/Lib/site-packages/pytz/zoneinfo/",
+    "C:/Program Files/LibreOffice/program/python-core-3.10.16/lib/site-packages/pytz/zoneinfo/",
+    "C:/Program Files/LibreOffice/program/python-core-3.10.16/lib/site-packages/dateutil/zoneinfo/dateutil-zoneinfo.tar/",
+    "C:/cygwin64/usr/share/zoneinfo/",
+    "C:/Users/" .. username .. "/AppData/Local/Lxss/rootfs/usr/share/zoneinfo/",
+    -- "C:/Users/" .. username .. "/AppData/Local/Packages/Ubuntu/LocalState/ext4.vhdx, 仮想イメーじなので未対応（
+    -- C:/Users/<YourUsername>/NoxVM/<InstanceName>/NOX.vmdk C:/ProgramData/BlueStacks/Engine/UserData/Data.vdi androidエミュレーターも仮想（）　まあadbde()
+    "--those are posix timezone,regacy method--",
+    "C:/msys64/usr/share/zoneinfo/", "C:/msys64/usr/share/zoneinfo/posix/",
+    "C:/Users/" .. username ..
+        "/AppData/Local/Programs/Python/Python312/Lib/site-packages/tzdata/",
+    "C:/Program Files/LibreOffice/program/python-core-3.10.16/lib/site-packages/tzdata/"
+}
+
+-- Unix-like paths //printenv または envコマンドで環境変数を確認
+timezone_tzif_path_suggest_unix = {
+    script_path() .. "zoneinfo/", -- script_path()はこのスクリプトの場所
+    "/usr/share/zoneinfo/", "/etc/localtime/",
+    "/usr/lib/python312/dist-packages/dateutil/zoneinfo/",
+    "/usr/local/lib/python312/dist-packages/dateutil/zoneinfo/",
+    "/usr/lib/libreoffice/program/python-core-3.10.16/lib/site-packages/pytz/zoneinfo/",
+    "/usr/lib/libreoffice/program/python-core-3.10.16/lib/site-packages/dateutil/zoneinfo/",
+    "/Applications/LibreOffice.app/Contents/Resources/python-core-3.10.16/lib/site-packages/pytz/zoneinfo/",
+    "/Applications/LibreOffice.app/Contents/Resources/python-core-3.10.16/lib/site-packages/dateutil/zoneinfo/dateutil-zoneinfo.tar/"
+}
