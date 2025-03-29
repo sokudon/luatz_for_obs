@@ -28,8 +28,9 @@ local tz_offsets = {
 tz_posix_string = nil -- "PST8PDT,M3.2.0,M11.1.0"
 parsedTZ = nil
 posix_offset = nil
-constant_posix = false
-posix_vs_fallback = false
+posix_abbr = nil
+constant_posix = false -- tz_untilsを無視してposixでのフォールバックをするか
+posix_vs_fallback = true -- math.hugeでのposixでのフォールバックをするか
 tz_len = tonumber(#tz_offsets) - 1
 local tz_idx = 1
 local tz_st = ""
@@ -837,7 +838,12 @@ function days(y, m, d)
 end
 
 function preset_fairfield_dateutc(y, m, d)
-    return (days(y, m, d) - days(1970, 1, 1)) * 86400
+    if (tonumber(y) and tonumber(m) and tonumber(d)) then
+        if (tonumber(m) > 0 and tonumber(m) <= 12) then
+            return (days(y, m, d) - days(1970, 1, 1)) * 86400
+        end
+    end
+    return "Invalid date"
 end
 
 function transitionToDate(year, transition, offset)
@@ -908,26 +914,26 @@ function getOffsetForLocalDateWithPosixTZ(localDate, posixTZ)
         -- obs.script_log(obs.LOG_DEBUG,"dt "..dt.." "..dt-dstStart)
         -- obs.script_log(obs.LOG_DEBUG,"ddstStart  "..dstStart.." "..dt-dstStart)
         -- obs.script_log(obs.LOG_DEBUG,"dstEnd "..dstEnd.." "..dt-dstEnd)
-        
+
         if dstStart > dstEnd then
             if dt >= dstStart or dt < dstEnd then
                 -- obs.script_log(obs.LOG_DEBUG,"dt >= dstStart or dt < dstEnd")
-                return parsedTZ.dstOffset
+                return parsedTZ.dstOffset, parsedTZ.dstAbbr
             end
-            obs.script_log(obs.LOG_DEBUG, "dt stdOffset")
+            -- obs.script_log(obs.LOG_DEBUG, "dt stdOffset")
         else
             if dt >= dstStart and dt < dstEnd then
-                return parsedTZ.dstOffset
+                return parsedTZ.dstOffset, parsedTZ.dstAbbr
             end
         end
     end
     -- obs.script_log(obs.LOG_DEBUG,"stdOffset done")
 
-    return parsedTZ.stdOffset
+    return parsedTZ.stdOffset, parsedTZ.stdAbbr
 end
 
 function formatLocalDateWithOffset(localDate, posixTZ)
-    local offset = getOffsetForLocalDateWithPosixTZ(localDate, posixTZ)
+    local offset, abbr = getOffsetForLocalDateWithPosixTZ(localDate, posixTZ)
     if not offset then return nil end
 
     local dt = os.date("*t", localDate) -- local time
@@ -938,8 +944,9 @@ function formatLocalDateWithOffset(localDate, posixTZ)
                                         offset >= 0 and "+" or "-",
                                         offset_hours, offset_minutes)
 
-    return string.format("%04d-%02d-%02dT%02d:%02d:%02d%s", dt.year, dt.month,
-                         dt.day, dt.hour, dt.min, dt.sec, offset_string)
+    return string.format("%04d-%02d-%02dT%02d:%02d:%02d%s " .. abbr, dt.year,
+                         dt.month, dt.day, dt.hour, dt.min, dt.sec,
+                         offset_string)
 end
 
 -- Cache for loaded timezones
@@ -987,15 +994,12 @@ function get_pst(timestamp)
         tz_idx = 1
         return tz_offsets[1] / (-60)
     end
-    if (tz_idx > #tz_untils - 1) then
-        if posix_tz_string and posix_tz_string ~= "" then
-            posix_offset = getOffsetForLocalDateWithPosixTZ(timestamp / 1000,
-                                                            posix_tz_string)
+    if (tz_idx > #tz_untils - 1 or constant_posix == true) then
+        if (posix_tz_string and posix_tz_string ~= "" and posix_vs_fallback ==
+            true) then
+            posix_offset, posix_abbr = getOffsetForLocalDateWithPosixTZ(
+                                           timestamp / 1000, posix_tz_string)
 
-            posix_vs_fallback = true
-
-            -- obs.script_log(obs.LOG_INFO,  "posix_tz_string mode: tz_idx=" .. tz_idx .. " posix_tz_string='" .. tostring(posix_tz_string) .. "'")
-            -- obs.script_log(obs.LOG_INFO, "posix_offset=" .. posix_offset)
             return posix_offset / -60
         end
 
@@ -1147,7 +1151,7 @@ function strftime(format, timestamp, offset_hours)
     result = result:gsub("%%M", string.format("%02d", components.minute))
     result = result:gsub("%%S", string.format("%02d", components.second))
     if (tz_idx == math.huge) then
-        result = result:gsub("%%Z", "not support posix")
+        result = result:gsub("%%Z", posix_abbr)
     else
         result = result:gsub("%%Z", tz_abbrs[tz_idx])
     end
