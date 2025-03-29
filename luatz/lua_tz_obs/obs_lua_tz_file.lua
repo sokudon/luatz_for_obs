@@ -748,10 +748,10 @@ function parsePosixTZ(tz)
     local LOCAL_TZ_RE = "^([A-Za-Z]+)([%+%-]?%d+)$" -- 標準的な POSIX タイムゾーン形式
     local LOCAL_TZ_REE = "^([A-Za-Z]+)([%+%-]?%d+)([A-Za-Z]+)$" -- 標準的な POSIX タイムゾーン形式
     local LOCAL_TZ_REEE = "^([A-Za-Z]+)([%+%-]?%d+)([A-Za-Z]+)([%+%-]?%d+)$" -- 標準的な POSIX タイムゾーン形式
-    local LOCAL_TZ_AB = "^(.[+-]?%d+:%d+.)([+-]?%d+:%d+)(.[+-]?%d+.)([+-]?%d+)$"
-    local LOCAL_TZ_ABB ="^(<[+-]?%d+:%d+>)([+-]?%d+:%d+)(%<[+-]?%d+:%d+>)([+-]?%d+:%d+)$"
+    local LOCAL_TZ_AB = "<?[+-]?%d+:?%d?%d?>?" -- lordhowe <+1030>-10:30<+11>-11,M10.1.0,M4.1.0
 
     local match
+    local posix_triangle_bracket = false
     local success_match = nil
     match = localTZ:match(LOCAL_TZ_RE)
     if match then
@@ -765,19 +765,44 @@ function parsePosixTZ(tz)
         -- obs.script_log(obs.LOG_DEBUG, "parsePosixTZ: Matched LOCAL_TZ_REEE")
     elseif localTZ:match(LOCAL_TZ_AB) then
         success_match = LOCAL_TZ_AB
+        posix_triangle_bracket = true
         -- obs.script_log(obs.LOG_DEBUG, "parsePosixTZ: Matched LOCAL_TZ_AB")
-    elseif localTZ:match(LOCAL_TZ_ABB) then
-        success_match = LOCAL_TZ_ABB
-        -- obs.script_log(obs.LOG_DEBUG, "parsePosixTZ: Matched LOCAL_TZ_ABB")
     end
 
-    if (success_match) then
+    if (posix_triangle_bracket) then
+        local matched = ""
+        for match in localTZ:gmatch(LOCAL_TZ_AB) do
+            matched = matched .. match .. ","
+        end
+
+        -- obs.script_log(obs.LOG_DEBUG, "matched:" .. matched)
+
+        local parts_posix_triangle = {}
+        for part in string.gmatch(matched, "[^,]+") do
+            table.insert(parts_posix_triangle, part)
+        end
+
+        result.stdAbbr = parts_posix_triangle[1]
+        result.stdOffset = parseOffset(parts_posix_triangle[2]) or 0
+        if (#parts_posix_triangle >= 3) then
+            result.dst = parts_posix_triangle[3] ~= nil
+            result.dstAbbr = parts_posix_triangle[3]
+            if (#parts_posix_triangle >= 4) then
+                result.dstOffset = parseOffset(parts_posix_triangle[4])
+            else
+                result.dstOffset = result.stdOffset - 60
+            end
+        else
+            result.dst = nil
+        end
+    elseif (success_match) then
         local stdAbbr, stdOffset, dstAbbr, dstOffset = localTZ:match(
                                                            success_match)
         result.stdAbbr = stdAbbr
         result.stdOffset = parseOffset(stdOffset) or 0
         result.dst = dstAbbr ~= nil
         result.dstAbbr = dstAbbr
+        result.dstOffset = parseOffset(dstOffset)
         result.dstOffset = parseOffset(dstOffset) or (result.stdOffset - 60)
     else
         -- obs.script_log(obs.LOG_WARNING, "parsePosixTZ: Could not parse localTZ: " ..  tostring(localTZ))
@@ -813,40 +838,6 @@ end
 
 function preset_fairfield_dateutc(y, m, d)
     return (days(y, m, d) - days(1970, 1, 1)) * 86400
-end
-
-function getOffsetForLocalDateWithPosixTZ(localDate, posixTZ)
-    parsedTZ = parsePosixTZ(posixTZ)
-    if not parsedTZ then return nil end
-
-    local year = tonumber(os.date("!%Y", localDate))
-    local month = tonumber(os.date("!%m", localDate))
-    local day = tonumber(os.date("!%d", localDate))
-    local hour = tonumber(os.date("!%H", localDate))
-    local min = tonumber(os.date("!%M", localDate))
-    local sec = tonumber(os.date("!%S", localDate))
-
-    local dt = preset_fairfield_dateutc(year, month, day) + hour * 3600 + min *
-                   60 + sec
-
-    if parsedTZ.dst then
-        local dstStart = transitionToDate(year, parsedTZ.dstStart,
-                                          parsedTZ.stdOffset)
-        local dstEnd = transitionToDate(year, parsedTZ.dstEnd,
-                                        parsedTZ.dstOffset)
-
-        if dstStart > dstEnd then
-            if dt >= dstStart or dt < dstEnd then
-                return parsedTZ.dstOffset
-            end
-        else
-            if dt >= dstStart and dt < dstEnd then
-                return parsedTZ.dstOffset
-            end
-        end
-    end
-
-    return parsedTZ.stdOffset
 end
 
 function transitionToDate(year, transition, offset)
@@ -890,7 +881,49 @@ function transitionToDate(year, transition, offset)
                          transition.second + offset * 60
 
     -- obs.script_log(obs.LOG_DEBUG,"data:" .. time_sec ..os.date(" %Y-%m-%d %H:%M:%S ", time_sec) ..os.date("!%Y-%m-%d %H:%M:%S ", time_sec))
+
     return time_sec
+end
+
+function getOffsetForLocalDateWithPosixTZ(localDate, posixTZ)
+    parsedTZ = parsePosixTZ(posixTZ)
+    if not parsedTZ then return nil end
+
+    local year = tonumber(os.date("!%Y", localDate))
+    local month = tonumber(os.date("!%m", localDate))
+    local day = tonumber(os.date("!%d", localDate))
+    local hour = tonumber(os.date("!%H", localDate))
+    local min = tonumber(os.date("!%M", localDate))
+    local sec = tonumber(os.date("!%S", localDate))
+
+    local dt = preset_fairfield_dateutc(year, month, day) + hour * 3600 + min *
+                   60 + sec
+
+    if parsedTZ.dst then
+        local dstStart = transitionToDate(year, parsedTZ.dstStart,
+                                          parsedTZ.stdOffset)
+        local dstEnd = transitionToDate(year, parsedTZ.dstEnd,
+                                        parsedTZ.dstOffset)
+
+        -- obs.script_log(obs.LOG_DEBUG,"dt "..dt.." "..dt-dstStart)
+        -- obs.script_log(obs.LOG_DEBUG,"ddstStart  "..dstStart.." "..dt-dstStart)
+        -- obs.script_log(obs.LOG_DEBUG,"dstEnd "..dstEnd.." "..dt-dstEnd)
+        
+        if dstStart > dstEnd then
+            if dt >= dstStart or dt < dstEnd then
+                -- obs.script_log(obs.LOG_DEBUG,"dt >= dstStart or dt < dstEnd")
+                return parsedTZ.dstOffset
+            end
+            obs.script_log(obs.LOG_DEBUG, "dt stdOffset")
+        else
+            if dt >= dstStart and dt < dstEnd then
+                return parsedTZ.dstOffset
+            end
+        end
+    end
+    -- obs.script_log(obs.LOG_DEBUG,"stdOffset done")
+
+    return parsedTZ.stdOffset
 end
 
 function formatLocalDateWithOffset(localDate, posixTZ)
@@ -958,18 +991,18 @@ function get_pst(timestamp)
         if posix_tz_string and posix_tz_string ~= "" then
             posix_offset = getOffsetForLocalDateWithPosixTZ(timestamp / 1000,
                                                             posix_tz_string)
-                                                            
-        posix_vs_fallback = true
+
+            posix_vs_fallback = true
 
             -- obs.script_log(obs.LOG_INFO,  "posix_tz_string mode: tz_idx=" .. tz_idx .. " posix_tz_string='" .. tostring(posix_tz_string) .. "'")
             -- obs.script_log(obs.LOG_INFO, "posix_offset=" .. posix_offset)
             return posix_offset / -60
         end
-        
+
         posix_vs_fallback = false
         tz_idx = #tz_untils - 1
         tz_idx = tz_idx + 1
-        --obs.script_log(obs.LOG_INFO, "Fallback offset=" .. (tz_offsets[tz_idx] / -60))
+        -- obs.script_log(obs.LOG_INFO, "Fallback offset=" .. (tz_offsets[tz_idx] / -60))
         return tz_offsets[tz_idx] / (-60)
     end
 
@@ -1118,7 +1151,10 @@ function strftime(format, timestamp, offset_hours)
     else
         result = result:gsub("%%Z", tz_abbrs[tz_idx])
     end
-    result = result:gsub("%%z", string.format("%+02d:%02d", offset_hours, 0))
+    local int_part, frac_part = math.modf(offset_hours) -- 整数部と小数部に分割
+    local minutes = math.floor(math.abs(frac_part) * 60 + 0.5) -- 小数部を60倍し四捨五入
+    local formatted = string.format("%+02d:%02d", int_part, minutes) -- フォーマット
+    result = result:gsub("%%z", formatted)
     result = result:gsub("%%a", weekdays[components.wday])
 
     return result
@@ -1127,6 +1163,8 @@ end
 function tznow(format_str, utc_time)
 
     local offset_hours = get_pst(utc_time * 1000)
+
+    -- obs.script_log(obs.LOG_ERROR,offset_hours)
     local timestamp = utc_time + offset_hours * 3600
 
     local result = strftime(format_str, timestamp, offset_hours)
