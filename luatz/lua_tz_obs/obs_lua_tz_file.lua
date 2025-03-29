@@ -82,7 +82,7 @@ timezone_tzif_path_suggest_window = {
 -- Unix-like paths //printenv または envコマンドで環境変数を確認
 timezone_tzif_path_suggest_unix = {
     script_path() .. "zoneinfo/", -- script_path()はこのスクリプトの場所
-    "/usr/share/zoneinfo/", "/etc/localtime/",
+    "/usr/share/zoneinfo/", "/etc/localtime/","/var/db/timezone/",
     "/usr/lib/python312/dist-packages/dateutil/zoneinfo/",
     "/usr/local/lib/python312/dist-packages/dateutil/zoneinfo/",
     "/usr/lib/libreoffice/program/python-core-3.10.16/lib/site-packages/pytz/zoneinfo/",

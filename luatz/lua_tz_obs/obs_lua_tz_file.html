@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OBS Lua 現在時刻表示スクリプト ドキュメント</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; padding: 20px; }
+        h1, h2, h3 { border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+        h1 { font-size: 2em; }
+        h2 { font-size: 1.5em; margin-top: 30px; }
+        h3 { font-size: 1.2em; margin-top: 20px; }
+        code { background-color: #f4f4f4; padding: 2px 5px; border-radius: 3px; font-family: monospace; }
+        pre { background-color: #f4f4f4; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        table { border-collapse: collapse; width: 100%; margin-top: 15px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        ul { margin-top: 10px; }
+        li { margin-bottom: 5px; }
+        strong { font-weight: bold;}
+    </style>
+</head>
+<body>
+
+    <h1>OBS Lua 現在時刻表示スクリプト ドキュメント</h1>
+
+    <p>このLuaスクリプトは、OBS Studioのテキストソースを使用して、指定されたタイムゾーンの現在時刻を柔軟な書式で表示します。ローカル時刻、UTC、JST、および任意のIANAタイムゾーンに対応しています。</p>
+
+    <h2>主な機能</h2>
+    <ul>
+        <li>指定したテキストソースに現在時刻を表示。</li>
+        <li>現在時刻の表示形式を <code>os.date</code> 準拠の書式 + カスタム書式 (<code>%TZN</code> など) で自由に設定可能。</li>
+        <li>表示するタイムゾーンをIANAタイムゾーン名 (例: <code>America/Los_Angeles</code>, <code>Asia/Tokyo</code>, <code>UTC</code>) で指定可能。</li>
+        <li>OSのローカル時刻 (<code>%N</code>)、UTC (<code>%UTC</code>)、日本標準時 (<code>%JST</code>)、指定タイムゾーン (<code>%TZ</code>, <code>%TZN</code>) の表示に対応。</li>
+        <li>TZ Database (zoneinfo/tzdata) ファイルの自動検索・読み込みによる正確なタイムゾーン/夏時間処理。</li>
+        <li>POSIX TZ 文字列によるフォールバック機能。</li>
+        <li>Windows環境での <code>os.date</code> の制限を考慮したタイムゾーン処理 (<code>%TZN</code>)。</li>
+    </ul>
+
+    <h2>インストール方法</h2>
+    <ol>
+        <li>OBS Studioを開きます。</li>
+        <li>メニューから <code>ツール</code> > <code>スクリプト</code> を選択します。</li>
+        <li><code>スクリプト</code> タブの左下にある <code>+</code> ボタンをクリックします。</li>
+        <li>ダウンロードした <code>.lua</code> ファイルを選択して追加します。</li>
+        <li>スクリプトがリストに追加され、右側に設定項目が表示されます。</li>
+    </ol>
+
+    <h2>設定項目 (スクリプトUI)</h2>
+    <p>スクリプトを選択すると、以下の設定項目が表示されます。</p>
+    <ul>
+        <li><strong>Text Source:</strong> 時刻を表示するOBS内のテキストソース（GDI+ または Freetype 2）を選択します。</li>
+        <li><strong>Time Zone:</strong> 表示したい時刻のIANAタイムゾーン名（例: <code>America/Los_Angeles</code>, <code>Asia/Tokyo</code>, <code>UTC</code>）。リストから選択または直接入力します。</li>
+        <li><strong>Text Format:</strong> テキストソースに最終的に表示する内容のテンプレート。利用可能なプレースホルダ（後述）を組み合わせて記述します。</li>
+        <li><strong>Time Format:</strong> <code>%N</code>, <code>%UTC</code>, <code>%JST</code>, <code>%TZ</code>, <code>%TZN</code> などで日時を表示する際の書式（後述の「日時 書式」参照）。</li>
+        <li><strong>tzpath:</strong> TZ Database (zoneinfo/tzdata) ファイルが格納されているディレクトリのパス。通常は自動検出されますが、必要に応じて手動で指定できます。リストから候補を選択または直接入力。</li>
+    </ul>
+
+    <h2>プレースホルダ (<code>Text Format</code>で使用)</h2>
+    <p><code>Time Format</code> 設定で指定した書式に従って表示されます。</p>
+    <table>
+        <thead>
+            <tr><th>プレースホルダ</th><th>説明</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>%N</code></td><td>現在時刻 (OS依存のローカル時刻)</td></tr>
+            <tr><td><code>%UTC</code></td><td>現在時刻 (UTC)</td></tr>
+            <tr><td><code>%JST</code></td><td>現在時刻 (日本標準時 JST, UTC+9)</td></tr>
+            <tr><td><code>%TZ</code></td><td>現在時刻 (設定された<code>Time Zone</code>の時刻)</td></tr>
+            <tr><td><code>%TZN</code></td><td>現在時刻 (設定された<code>Time Zone</code>の時刻、<code>os.date</code>非依存実装)</td></tr>
+            <tr><td><code>%%</code></td><td><code>%</code> 文字自体</td></tr>
+            <tr><td><code>%n</code></td><td>改行</td></tr>
+            <tr><td><code>%t</code></td><td>水平タブ</td></tr>
+        </tbody>
+    </table>
+
+    <h2>日時 書式 (<code>Time Format</code> 設定で使用。<code>os.date</code>準拠 + カスタム)</h2>
+    <table>
+        <thead>
+            <tr><th>書式</th><th>説明</th><th>例 (Asia/Tokyo)</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>%Y</code></td><td>年 (4桁)</td><td><code>2025</code></td></tr>
+            <tr><td><code>%m</code></td><td>月 (01-12)</td><td><code>03</code></td></tr>
+            <tr><td><code>%d</code></td><td>日 (01-31)</td><td><code>29</code></td></tr>
+            <tr><td><code>%H</code></td><td>時 (24時間形式, 00-23)</td><td><code>15</code></td></tr>
+            <tr><td><code>%M</code></td><td>分 (00-59)</td><td><code>23</code></td></tr>
+            <tr><td><code>%S</code></td><td>秒 (00-59)</td><td><code>43</code></td></tr>
+            <tr><td><code>%a</code></td><td>曜日 (省略形)</td><td><code>Sat</code></td></tr>
+            <tr><td><code>%A</code></td><td>曜日 (完全形)</td><td><code>Saturday</code></td></tr>
+            <tr><td><code>%b</code></td><td>月 (省略形)</td><td><code>Mar</code></td></tr>
+            <tr><td><code>%B</code></td><td>月 (完全形)</td><td><code>March</code></td></tr>
+            <tr><td><code>%z</code></td><td>タイムゾーンオフセット (+HHMM または -HHMM形式)</td><td><code>+0900</code></td></tr>
+            <tr><td><code>%Z</code></td><td>タイムゾーン略称 (例: <code>PST</code>, <code>JST</code>, <code>UTC</code>) ※<code>%TZN</code>専用実装</td><td><code>JST</code></td></tr>
+            <tr><td><code>%c</code></td><td>ロケール依存の日時表現</td><td><code>Sat Mar 29 15:23:43 2025</code></td></tr>
+            <tr><td><code>%x</code></td><td>ロケール依存の日付表現</td><td><code>03/29/25</code></td></tr>
+            <tr><td><code>%X</code></td><td>ロケール依存の時刻表現</td><td><code>15:23:43</code></td></tr>
+            <tr><td><code>%Y-%m-%dT%H:%M:%S%z (%a)</code></td><td>ISO 8601風のカスタム書式例</td><td><code>2025-03-29T15:23:43+0900 (Sat)</code></td></tr>
+            <tr><td><em>(その他 <code>os.date</code> の書式指定子)</em></td><td></td><td></td></tr>
+        </tbody>
+    </table>
+    <p><strong>注意:</strong> Windows環境では <code>os.date</code> の <code>%Z</code>, <code>%z</code> の挙動に制限があるため、<code>%TZ</code>, <code>%TZN</code>など、スクリプト内部でタイムゾーン処理を行うプレースホルダの使用が推奨されます。特に <code>%TZN</code> は <code>os.date</code> を使わずにタイムゾーン略称(%Z)とオフセット(%z)を含む書式を処理します。スクリプト内の <code>format_string_avoid_crash</code>, <code>osdate_avoid_crash</code> 変数は、クラッシュを避けるために特定の書式指定子を内部的に除去するために使われます。</p>
+
+    <h2>タイムゾーン処理詳細</h2>
+    <ul>
+        <li><strong>TZ Database (zoneinfo/tzdata):</strong> スクリプトは一般的なパス (Windows/Unix) を検索し、<code>zoneinfo</code> ディレクトリまたは <code>tzdata</code> ファイルを見つけようとします。見つかった場合、指定された<code>Time Zone</code>のTZIFバイナリファイルを解析し、正確なUTCオフセットと夏時間(DST)の遷移情報を使用します。<code>tzpath</code>設定でパスを手動指定することも可能です。</li>
+        <li><strong>POSIX TZ 文字列:</strong> TZ Databaseファイルが利用できない場合や、ファイルの有効期限を超える将来の日時については、TZIFファイル内に含まれるPOSIX TZ文字列（例: <code>PST8PDT,M3.2.0,M11.1.0</code>）に基づいてオフセットとDSTを計算しようと試みます。</li>
+        <li><strong>Moment Timezone データ:</strong> スクリプト内部に <code>America/Los_Angeles</code> の過去～未来約10年分のタイムゾーン遷移情報 (UTCオフセット、略称、遷移時刻) がMoment Timezoneのデータ形式に似た形でハードコードされており、TZ Databaseが見つからない場合のフォールバックや、特定のタイムゾーン処理に使用されることがあります。</li>
+    </ul>
+
+    <h2>注意事項</h2>
+    <ul>
+        <li><strong>テキストソース:</strong> 設定で指定したテキストソースが存在しない場合、更新は行われません。</li>
+        <li><strong>タイムゾーンファイル:</strong> 正確なタイムゾーン処理のためには、システムのどこかに <code>zoneinfo</code> または <code>tzdata</code> ファイルが存在することが望ましいです。PythonやCygwin、WSLなどをインストールしている場合、それらのパスから自動検出されることがあります。</li>
+        <li><strong>パフォーマンス:</strong> 1秒ごとのテキスト更新は、OBSのパフォーマンスにわずかな影響を与える可能性があります。</li>
+        <li><strong>Windowsの <code>os.date</code> 制限:</strong> Windowsの標準Lua実装では、<code>os.date</code>関数でのタイムゾーン名(<code>%Z</code>)や一部のオフセット形式(<code>%z</code>)、および1970年以前の時刻の扱いに制限があります。スクリプトはこの制限を回避・考慮するためにカスタムのタイムゾーン処理を行っています。</li>
+    </ul>
+
+</body>
+</html>
